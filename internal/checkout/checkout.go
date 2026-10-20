@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -87,12 +88,14 @@ func scoreQuery(payload Payload, cartTotal float64, hasBracketing bool) (string,
 		placeholders[i] = "?"
 		args = append(args, item.SKU)
 	}
+	// The Exasol driver reports untyped placeholders as VARCHAR, so booleans and
+	// doubles are bound as strings and cast server-side to the types the UDF expects.
 	args = append(args,
 		payload.CustomerID,
 		payload.Pincode,
-		hasBracketing,
-		cartTotal,
-		strings.EqualFold(payload.PaymentMode, "COD"),
+		strconv.FormatBool(hasBracketing),
+		strconv.FormatFloat(cartTotal, 'f', -1, 64),
+		strconv.FormatBool(strings.EqualFold(payload.PaymentMode, "COD")),
 	)
 
 	query := fmt.Sprintf(`
@@ -116,10 +119,10 @@ func scoreQuery(payload Payload, cartTotal float64, hasBracketing bool) (string,
 			predict_return_risk(
 				(SELECT cust_ret_rate FROM cust_stats),
 				(SELECT pin_ret_rate FROM pin_stats),
-				?,
+				CAST(? AS BOOLEAN),
 				(SELECT max_skew FROM cart_skus),
-				?,
-				?
+				CAST(? AS DOUBLE PRECISION),
+				CAST(? AS BOOLEAN)
 			) AS propensity_score
 		FROM cart_skus;
 	`, strings.Join(placeholders, ","))

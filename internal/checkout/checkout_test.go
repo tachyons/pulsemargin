@@ -90,7 +90,7 @@ func TestScoreQueryArgsMatchPlaceholders(t *testing.T) {
 	if got, want := strings.Count(query, "?"), len(args); got != want {
 		t.Fatalf("placeholders = %d, args = %d", got, want)
 	}
-	if args[len(args)-1] != true {
-		t.Errorf("COD payment mode should produce a true final arg, got %v", args[len(args)-1])
+	if args[len(args)-1] != "true" {
+		t.Errorf("COD payment mode should produce a \"true\" final arg, got %v", args[len(args)-1])
 	}
 }

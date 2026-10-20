@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -27,9 +28,12 @@ func seedPincodes(ctx context.Context, db *sql.DB) error {
 	log.Println("Seeding pincode_risk_factors...")
 	pincodes := []string{"110001", "400001", "560001", "600001", "700001", "670001", "500001", "380001"}
 
+	// The Exasol driver reports untyped placeholders in a SELECT list as
+	// VARCHAR, so every argument is passed as a string and cast server-side.
 	stmt, err := db.PrepareContext(ctx, `
 		MERGE INTO pincode_risk_factors p
-		USING (SELECT ? AS pincode, ? AS rto_rate, ? AS courier_reliability, ? AS is_high_risk_zone FROM DUAL) src
+		USING (SELECT CAST(? AS VARCHAR(10)) AS pincode, CAST(? AS DOUBLE PRECISION) AS rto_rate,
+			CAST(? AS DOUBLE PRECISION) AS courier_reliability, CAST(? AS BOOLEAN) AS is_high_risk_zone FROM DUAL) src
 		ON p.pincode = src.pincode
 		WHEN MATCHED THEN UPDATE SET p.rto_rate = src.rto_rate, p.courier_reliability = src.courier_reliability
 		WHEN NOT MATCHED THEN INSERT VALUES (src.pincode, src.rto_rate, src.courier_reliability, src.is_high_risk_zone);
@@ -44,7 +48,12 @@ func seedPincodes(ctx context.Context, db *sql.DB) error {
 		rtoRate := 0.05 + r.Float64()*0.35
 		reliability := 0.70 + r.Float64()*0.28
 		isHighRisk := rtoRate > 0.25
-		if _, err := stmt.ExecContext(ctx, pin, rtoRate, reliability, isHighRisk); err != nil {
+		if _, err := stmt.ExecContext(ctx,
+			pin,
+			strconv.FormatFloat(rtoRate, 'f', -1, 64),
+			strconv.FormatFloat(reliability, 'f', -1, 64),
+			strconv.FormatBool(isHighRisk),
+		); err != nil {
 			log.Printf("Error inserting pincode %s: %v", pin, err)
 		}
 	}
@@ -57,9 +66,11 @@ func seedProducts(ctx context.Context, db *sql.DB) error {
 	categories := []string{"Apparel_Jeans", "Apparel_Shoes", "Electronics_Audio", "Apparel_Dresses"}
 	sizes := []string{"S", "M", "L", "XL", "UK8", "UK9", "Standard"}
 
+	// Same placeholder-typing caveat as the pincode seed: bind strings and cast.
 	stmt, err := db.PrepareContext(ctx, `
 		MERGE INTO product_return_telemetry p
-		USING (SELECT ? AS sku, ? AS category, ? AS size, ? AS size_skew_factor, ? AS return_rate FROM DUAL) src
+		USING (SELECT CAST(? AS VARCHAR(64)) AS sku, CAST(? AS VARCHAR(64)) AS category, CAST(? AS VARCHAR(10)) AS size,
+			CAST(? AS DOUBLE PRECISION) AS size_skew_factor, CAST(? AS DOUBLE PRECISION) AS return_rate FROM DUAL) src
 		ON p.sku = src.sku
 		WHEN MATCHED THEN UPDATE SET p.size_skew_factor = src.size_skew_factor
 		WHEN NOT MATCHED THEN INSERT VALUES (src.sku, src.category, src.size, src.size_skew_factor, src.return_rate);
@@ -77,7 +88,13 @@ func seedProducts(ctx context.Context, db *sql.DB) error {
 		sizeSkew := r.Float64() * 0.90
 		returnRate := 0.10 + r.Float64()*0.30
 
-		if _, err := stmt.ExecContext(ctx, sku, cat, size, sizeSkew, returnRate); err != nil {
+		if _, err := stmt.ExecContext(ctx,
+			sku,
+			cat,
+			size,
+			strconv.FormatFloat(sizeSkew, 'f', -1, 64),
+			strconv.FormatFloat(returnRate, 'f', -1, 64),
+		); err != nil {
 			log.Printf("Error inserting SKU %s: %v", sku, err)
 		}
 	}

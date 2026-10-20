@@ -19,8 +19,9 @@ type Config struct {
 // Open creates the Exasol connection pool. No network round trip happens until
 // the pool is first used, so callers decide whether to Ping.
 func Open(cfg Config) (*sql.DB, error) {
-	// Standard Exasol Go connection URI
-	dsn := fmt.Sprintf("exa:%s:%d;user=%s;password=%s;schema=%s",
+	// Standard Exasol Go connection URI. Local/dev instances ship a
+	// self-signed certificate, so server certificate validation is disabled.
+	dsn := fmt.Sprintf("exa:%s:%d;user=%s;password=%s;schema=%s;validateservercertificate=0",
 		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.Schema,
 	)
 
