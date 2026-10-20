@@ -1,9 +1,30 @@
 # PulseMargin
 
-Return-risk scoring for e-commerce checkout, built on Exasol. The Go service takes a
-cart, sends one analytical query to Exasol, and returns an interception tier. All the
-feature aggregation and the logistic-regression scoring happen inside the database —
-there is no separate model server.
+Return-risk scoring for e-commerce checkout, built on Exasol.
+
+## The problem
+
+Indian e-commerce loses a large slice of margin to returns. Two failure modes dominate:
+
+- **COD (cash-on-delivery) refusals** — a customer rejects the parcel at the door. The
+  seller eats two-way shipping, and the inventory sits idle for weeks.
+- **Size bracketing** — a customer orders the same item in two sizes ("I'll return the one
+  that doesn't fit"). Return rates on apparel can exceed 30% in high-RTO pincodes.
+
+Today this is caught (if at all) *after* fulfilment, when the only options are a refund
+and a loss. The decision that actually matters happens at the **checkout** — is this
+particular cart, from this customer, to this pincode, on this payment mode, likely to
+come back?
+
+PulseMargin answers that in a single query, inside the database. The checkout service
+sends the cart once and gets back an interception tier with tailored interventions
+(verify sizing before dispatch, convert COD to prepaid, route to a cheaper courier).
+
+## Who it is for
+
+Marketplace and D2C operations teams on Exasol. There is no separate model server to run:
+all feature aggregation and the logistic-regression scoring happen in-database, so the
+latency is a property of the warehouse, not of a Python microservice.
 
 ## Setup
 
@@ -107,7 +128,52 @@ Its inputs are the customer's historical return rate, the pincode RTO rate, the 
 sizing skew across the cart, cart value, and whether the order is COD. Buying two sizes
 of the same category counts as bracketing and raises the score.
 
-`GET /healthz` is there for liveness checks.
+### Web UI
+
+Open <http://localhost:8080/> for a minimal UI (built with
+[Oat](https://github.com/knadh/oat)) that fills the same request and renders the tier.
+The UI is embedded in the Go binary with `go:embed` — no CDN, no build step.
+
+### Endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/` | Checkout scoring UI |
+| `GET` | `/healthz` | Liveness probe |
+| `POST` | `/api/v1/checkout/score` | Score a cart |
+
+## Deployment
+
+### Container
+
+Build a small static image (the UI is embedded, so the runtime needs only the binary):
+
+```bash
+CGO_ENABLED=0 go build -o bin/pulsemargin-api ./cmd/api
+```
+
+Run it against any reachable Exasol instance by setting the connection variables:
+
+```bash
+EXASOL_HOST=exasol.example.com \
+EXASOL_PORT=8563 \
+EXASOL_USER=sys \
+EXASOL_PASS=... \
+EXASOL_SCHEMA=PULSE_MARGIN \
+PORT=8080 \
+  ./bin/pulsemargin-api
+```
+
+### Production notes
+
+- Point `EXASOL_HOST`/`EXASOL_PORT` at your cluster and provision the schema and UDF with
+  the SQL client of your choice before first use (see "Load the DDL").
+- TLS: the connection disables server certificate validation for the local self-signed
+  cert. For a cluster with a trusted CA, use `certificatefingerprint` in
+  `internal/database/exasol.go` instead of `validateservercertificate=0`.
+- The service holds a pooled connection (`SetMaxOpenConns(25)`); size it to your cluster's
+  session limits. Scoring queries carry a 1.5s deadline at the HTTP layer.
+- `GET /healthz` is the liveness endpoint for your orchestrator.
 
 ## Connection troubleshooting
 
@@ -134,10 +200,20 @@ Python SLC from "Local Exasol" is missing: `exasol slc install PYTHON3`.
 ```
 cmd/api       HTTP service
 cmd/seed      data loader
-internal/     config, Exasol connection, checkout scoring, HTTP handlers, seeding
+internal/api  HTTP handlers + embedded web UI
+internal/checkout  scoring query and tier logic
+internal/     config, Exasol connection, seeding
 sql/          schema and UDF
 scripts/      CSV generator
+docs/         pitch deck (Typst source + PDF)
 ```
 
 `make test` runs the unit tests; they cover cart bracketing and tier boundaries, not the
 database.
+
+## Submitting / demo
+
+- Pitch deck: [`docs/pitch.pdf`](docs/pitch.pdf) (source: `docs/pitch.typ`, rebuild with
+  `typst compile docs/pitch.typ docs/pitch.pdf`).
+- Demo video: a ≤3-minute walkthrough of the setup and a live score.
+- Licence: [MIT](LICENSE).
