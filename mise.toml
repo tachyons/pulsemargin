@@ -1,3 +1,6 @@
 [tools]
 go = "1.27.1"
 python = "3.10.20"
+# Exasol Personal CLI (`exasol`), installed from its GitHub release assets.
+# `matching` keeps every platform's asset and lets mise pick the right one.
+"github:exasol/exasol-personal" = { version = "2.3.0", matching = "exasol-personal_" }

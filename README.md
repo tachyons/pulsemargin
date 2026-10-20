@@ -7,12 +7,18 @@ there is no separate model server.
 
 ## Setup
 
-You need a running Exasol instance and Python 3 for the CSV generator. Install the Go
-and Python versions with mise:
+You need a running Exasol instance and Python 3 for the CSV generator. The Go, Python and
+Exasol CLI versions are pinned in `mise.toml`; install them with
+[mise](https://mise.jdx.dev):
 
 ```bash
-mise install
+mise install          # installs Go, Python and the `exasol` CLI from mise.toml
+mise exec -- make run  # or activate mise: `mise activate` / direnv, then `make run`
 ```
+
+The `exasol` CLI comes from the `exasol-personal` GitHub release assets (there is no
+mise registry shorthand). To update it, bump the version in `mise.toml` and re-run
+`mise install`.
 
 ### Local Exasol (Exasol Personal)
 
