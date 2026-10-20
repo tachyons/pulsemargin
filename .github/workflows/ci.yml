@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # Only install the Go toolchain: the unit tests don't touch Exasol or Python,
+    # so skip the large `exasol` CLI from mise.toml.
+    env:
+      MISE_ENABLE_TOOLS: go
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools from mise.toml
+        uses: jdx/mise-action@v4
+
+      - name: Tidy check
+        run: go mod tidy && git diff --exit-code -- go.mod go.sum
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: make build
+
+      - name: Test
+        run: make test
