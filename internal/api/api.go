@@ -2,13 +2,18 @@ package api
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
+	"io/fs"
 	"log"
 	"net/http"
 	"time"
 
 	"pulsemargin/internal/checkout"
 )
+
+//go:embed static
+var staticFS embed.FS
 
 type handler struct {
 	scorer *checkout.Scorer
@@ -22,7 +27,21 @@ func NewHandler(scorer *checkout.Scorer) http.Handler {
 	mux.HandleFunc("GET /healthz", h.health)
 	mux.HandleFunc("POST /api/v1/checkout/score", h.checkoutScore)
 
+	staticDir, _ := fs.Sub(staticFS, "static")
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticDir))))
+	mux.HandleFunc("GET /{$}", h.index)
+
 	return mux
+}
+
+func (h *handler) index(w http.ResponseWriter, r *http.Request) {
+	page, err := staticFS.ReadFile("static/index.html")
+	if err != nil {
+		http.Error(w, "index unavailable", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(page)
 }
 
 func (h *handler) health(w http.ResponseWriter, r *http.Request) {

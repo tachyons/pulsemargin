@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PulseMargin · Return-Risk Scoring</title>
+  <link rel="stylesheet" href="/static/oat.min.css">
+  <script src="/static/oat.min.js" defer></script>
+</head>
+<body>
+  <main class="container" style="max-width: 46rem; margin-inline: auto; padding-block: 2rem;">
+    <hgroup>
+      <h1>PulseMargin</h1>
+      <p>Return-risk scoring for e-commerce checkout, computed inside Exasol.</p>
+    </hgroup>
+
+    <form id="score-form">
+      <label>
+        Checkout ID
+        <input name="checkout_id" value="chk_101" required>
+      </label>
+      <label>
+        Customer ID
+        <input name="customer_id" value="CUST_0000042" required>
+      </label>
+      <label>
+        Pincode
+        <input name="pincode" value="110001" required>
+      </label>
+      <label>
+        Payment mode
+        <select name="payment_mode">
+          <option value="COD">COD</option>
+          <option value="PREPAID">PREPAID</option>
+        </select>
+      </label>
+
+      <fieldset>
+        <legend>Items</legend>
+        <div id="items">
+          <div class="item-row">
+            <input name="sku" value="SKU-0001" placeholder="SKU" required>
+            <input name="category" value="Apparel_Jeans" placeholder="Category">
+            <input name="size" value="M" placeholder="Size">
+            <input name="price" value="1899" type="number" step="0.01" placeholder="Price" required>
+          </div>
+          <div class="item-row">
+            <input name="sku" value="SKU-0001" placeholder="SKU" required>
+            <input name="category" value="Apparel_Jeans" placeholder="Category">
+            <input name="size" value="L" placeholder="Size">
+            <input name="price" value="1899" type="number" step="0.01" placeholder="Price" required>
+          </div>
+        </div>
+        <button type="button" id="add-item" class="outline">Add item</button>
+      </fieldset>
+
+      <button type="submit">Score checkout</button>
+    </form>
+
+    <section id="result" hidden>
+      <h2>Decision</h2>
+      <p>
+        Risk score <strong id="risk-score">–</strong>
+        <span id="tier" role="status"></span>
+        · <span id="latency">–</span>
+      </p>
+      <ul id="interventions"></ul>
+    </section>
+
+    <section id="error" hidden>
+      <article role="alert" id="error-message"></article>
+    </section>
+  </main>
+
+  <script>
+    const form = document.getElementById('score-form');
+    const itemsEl = document.getElementById('items');
+    const addBtn = document.getElementById('add-item');
+    const result = document.getElementById('result');
+    const errorBox = document.getElementById('error');
+    const errorMessage = document.getElementById('error-message');
+
+    const tierStyles = {
+      HIGH_RISK: 'background:#fee; color:#a00; padding:.15rem .5rem; border-radius:.5rem;',
+      MEDIUM_RISK: 'background:#ffd; color:#960; padding:.15rem .5rem; border-radius:.5rem;',
+      LOW_RISK: 'background:#efe; color:#060; padding:.15rem .5rem; border-radius:.5rem;'
+    };
+
+    addBtn.addEventListener('click', () => {
+      const row = document.createElement('div');
+      row.className = 'item-row';
+      row.innerHTML = `
+        <input name="sku" placeholder="SKU" required>
+        <input name="category" placeholder="Category">
+        <input name="size" placeholder="Size">
+        <input name="price" type="number" step="0.01" placeholder="Price" required>`;
+      itemsEl.appendChild(row);
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      result.hidden = true;
+      errorBox.hidden = true;
+
+      const data = new FormData(form);
+      const items = [];
+      const rows = itemsEl.querySelectorAll('.item-row');
+      for (const row of rows) {
+        const [sku, category, size, price] = row.querySelectorAll('input');
+        items.push({
+          sku: sku.value,
+          category: category.value,
+          size: size.value,
+          price: parseFloat(price.value) || 0
+        });
+      }
+
+      const payload = {
+        checkout_id: data.get('checkout_id'),
+        customer_id: data.get('customer_id'),
+        pincode: data.get('pincode'),
+        payment_mode: data.get('payment_mode'),
+        items
+      };
+
+      const submitBtn = form.querySelector('button[type=submit]');
+      submitBtn.disabled = true;
+
+      try {
+        const resp = await fetch('/api/v1/checkout/score', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const body = await resp.json();
+        if (!resp.ok) {
+          throw new Error(body.error || 'Scoring failed');
+        }
+        renderDecision(body);
+      } catch (err) {
+        errorMessage.textContent = err.message;
+        errorBox.hidden = false;
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    function renderDecision(d) {
+      document.getElementById('risk-score').textContent = d.risk_score.toFixed(3);
+      const tier = document.getElementById('tier');
+      tier.textContent = d.action_tier.replace('_', ' ');
+      tier.setAttribute('style', tierStyles[d.action_tier] || '');
+      document.getElementById('latency').textContent =
+        d.database_latency_ms + ' ms in Exasol';
+
+      const list = document.getElementById('interventions');
+      list.innerHTML = '';
+      for (const action of d.recommended_interventions) {
+        const li = document.createElement('li');
+        li.textContent = action;
+        list.appendChild(li);
+      }
+      result.hidden = false;
+    }
+  </script>
+</body>
+</html>
