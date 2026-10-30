@@ -16,11 +16,11 @@ import (
 var staticFS embed.FS
 
 type handler struct {
-	scorer *checkout.Scorer
+	scorer checkout.Scorer
 }
 
 // NewHandler builds the API routes.
-func NewHandler(scorer *checkout.Scorer) http.Handler {
+func NewHandler(scorer checkout.Scorer) http.Handler {
 	h := &handler{scorer: scorer}
 
 	mux := http.NewServeMux()

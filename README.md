@@ -123,10 +123,7 @@ curl -s localhost:8080/api/v1/checkout/score \
 }
 ```
 
-The score is produced by `predict_return_risk`, a Python UDF that runs on the cluster.
-Its inputs are the customer's historical return rate, the pincode RTO rate, the maximum
-sizing skew across the cart, cart value, and whether the order is COD. Buying two sizes
-of the same category counts as bracketing and raises the score.
+The score is produced either by the in-database Python UDF (`predict_return_risk`) or the alternate ML scoring engine (`SCORER_BACKEND=ml`), which supports pluggable machine learning models (logistic regression, decision trees, or remote inference) and dynamic tier categorization instead of static rules. If Exasol is unreachable, the API gracefully falls back to the ML engine for standalone local testing.
 
 ### Web UI
 
