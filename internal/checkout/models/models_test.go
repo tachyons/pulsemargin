@@ -188,3 +188,26 @@ func TestRemoteModelClient(t *testing.T) {
 		}
 	})
 }
+
+func TestExasolMLModel(t *testing.T) {
+	fallback := NewLogisticRegressionModel("fallback_v1", DefaultLogisticWeights())
+	model := NewExasolMLModel(nil, "exasol_ensemble_v2", fallback)
+
+	if model.Name() != "exasol_ensemble_v2" {
+		t.Errorf("got model name %s, want exasol_ensemble_v2", model.Name())
+	}
+
+	// Nil DB triggers fallback
+	pred, err := model.Predict(context.Background(), checkout.Features{
+		CartTotal:          3000,
+		HasBracketing:      true,
+		CustomerReturnRate: 0.50,
+	})
+	if err != nil {
+		t.Fatalf("expected fallback to succeed, got error: %v", err)
+	}
+
+	if pred.ModelVersion != "fallback_v1" {
+		t.Errorf("expected fallback model version, got %s", pred.ModelVersion)
+	}
+}

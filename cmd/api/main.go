@@ -54,8 +54,8 @@ func main() {
 		scorer = checkout.NewDatabaseScorer(db)
 	default: // "auto"
 		if dbConnected {
-			log.Println("Auto-selected Exasol Database Scorer (database connection active)")
-			scorer = checkout.NewDatabaseScorer(db)
+			log.Println("Exasol connected. Using ML Scorer with in-database Exasol inference & feature store")
+			scorer = buildMLScorer(cfg, db, true)
 		} else {
 			log.Printf("Exasol unavailable. Auto-fallback to ML Scorer (model: %s) with in-memory feature store", cfg.MLModel)
 			scorer = buildMLScorer(cfg, db, false)
@@ -95,22 +95,28 @@ func main() {
 func buildMLScorer(cfg config.Config, db *sql.DB, useDBStore bool) checkout.Scorer {
 	var store checkout.FeatureStore
 	if useDBStore && db != nil {
-		log.Println("ML Scorer: using DatabaseFeatureStore")
+		log.Println("ML Scorer: using DatabaseFeatureStore on Exasol")
 		store = checkout.NewDatabaseFeatureStore(db)
 	} else {
 		log.Println("ML Scorer: using InMemoryFeatureStore")
 		store = checkout.NewInMemoryFeatureStore()
 	}
 
+	localFallback := models.NewLogisticRegressionModel("logistic_fallback_v1.2", models.DefaultLogisticWeights())
+
 	var model checkout.MLModel
 	switch cfg.MLModel {
 	case "tree":
 		model = models.NewDecisionTreeModel("tree_ensemble_v2.0")
 	case "remote":
-		fallback := models.NewLogisticRegressionModel("logistic_fallback_v1.0", models.DefaultLogisticWeights())
-		model = models.NewRemoteModelClient(cfg.MLRemoteURL, 500*time.Millisecond, fallback)
-	default: // "logistic"
-		model = models.NewLogisticRegressionModel("logistic_regression_v1.2", models.DefaultLogisticWeights())
+		model = models.NewRemoteModelClient(cfg.MLRemoteURL, 500*time.Millisecond, localFallback)
+	default: // "exasol" or "logistic"
+		if useDBStore && db != nil {
+			log.Println("ML Scorer: using in-database Exasol ML Model (predict_ml_risk UDF)")
+			model = models.NewExasolMLModel(db, "exasol_ensemble_v2", localFallback)
+		} else {
+			model = localFallback
+		}
 	}
 
 	extractor := checkout.NewFeatureExtractor(store)
