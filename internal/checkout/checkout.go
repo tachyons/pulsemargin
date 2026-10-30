@@ -30,20 +30,27 @@ type Decision struct {
 	ActionTier    string   `json:"action_tier"`
 	Interventions []string `json:"recommended_interventions"`
 	LatencyMs     int64    `json:"database_latency_ms"`
+	ModelVersion  string   `json:"model_version,omitempty"`
 }
 
-// Scorer evaluates checkout return risk inside Exasol.
-type Scorer struct {
+// DatabaseScorer evaluates checkout return risk inside Exasol using the predict_return_risk UDF.
+type DatabaseScorer struct {
 	db *sql.DB
 }
 
-func NewScorer(db *sql.DB) *Scorer {
-	return &Scorer{db: db}
+// NewDatabaseScorer constructs a database-backed checkout scorer.
+func NewDatabaseScorer(db *sql.DB) *DatabaseScorer {
+	return &DatabaseScorer{db: db}
+}
+
+// NewScorer creates a database-backed Scorer for backward compatibility.
+func NewScorer(db *sql.DB) Scorer {
+	return NewDatabaseScorer(db)
 }
 
 // Score runs the in-database risk model and maps the returned propensity to an
 // interception tier.
-func (s *Scorer) Score(ctx context.Context, payload Payload) (Decision, error) {
+func (s *DatabaseScorer) Score(ctx context.Context, payload Payload) (Decision, error) {
 	start := time.Now()
 
 	cartTotal, hasBracketing := analyzeCart(payload.Items)
@@ -59,7 +66,9 @@ func (s *Scorer) Score(ctx context.Context, payload Payload) (Decision, error) {
 		riskScore = score.Float64
 	}
 
-	return newDecision(payload.CheckoutID, riskScore, time.Since(start).Milliseconds()), nil
+	decision := newDecision(payload.CheckoutID, riskScore, time.Since(start).Milliseconds())
+	decision.ModelVersion = "exasol_udf_v1"
+	return decision, nil
 }
 
 // analyzeCart totals the cart and detects size bracketing: multiple sizes of

@@ -123,10 +123,58 @@ curl -s localhost:8080/api/v1/checkout/score \
 }
 ```
 
-The score is produced by `predict_return_risk`, a Python UDF that runs on the cluster.
-Its inputs are the customer's historical return rate, the pincode RTO rate, the maximum
-sizing skew across the cart, cart value, and whether the order is COD. Buying two sizes
-of the same category counts as bracketing and raises the score.
+The score can be produced by:
+- **Exasol Database Scorer (`predict_return_risk` UDF)**: In-database scoring executing feature aggregation and logistic regression on the warehouse cluster.
+- **Machine Learning Scorer (`internal/checkout/ml_scorer.go`)**: Pluggable Go interface architecture decoupling feature stores (`FeatureStore`), feature extraction (`FeatureExtractor`), machine learning models (`MLModel`), and dynamic tier categorization (`Categorizer`).
+
+### Machine Learning & Interface Architecture
+
+PulseMargin defines clean Go interfaces to support ML models for scoring and categorization instead of static rules:
+
+```go
+type Scorer interface {
+    Score(ctx context.Context, payload Payload) (Decision, error)
+}
+
+type MLModel interface {
+    Name() string
+    Predict(ctx context.Context, features Features) (Prediction, error)
+}
+
+type Categorizer interface {
+    Categorize(ctx context.Context, payload Payload, prediction Prediction) (tier string, interventions []string, err error)
+}
+
+type FeatureExtractor interface {
+    ExtractFeatures(ctx context.Context, payload Payload) (Features, error)
+}
+
+type FeatureStore interface {
+    GetCustomerStats(ctx context.Context, customerID string) (CustomerStats, error)
+    GetPincodeStats(ctx context.Context, pincode string) (PincodeStats, error)
+    GetSKUStats(ctx context.Context, skus []string) (SKUStats, error)
+}
+```
+
+#### Included Implementations:
+1. **Models (`internal/checkout/models/`)**:
+   - `LogisticRegressionModel`: Calibrated coefficients with sigmoid probability output and feature attribution explainability.
+   - `DecisionTreeModel`: Tree ensemble evaluating non-linear feature interactions (e.g. compound COD + size bracketing risk).
+   - `RemoteModelClient`: HTTP client connecting to external ML inference servers (Triton, TorchServe, FastAPI) with fallback support.
+2. **Categorizers**:
+   - `MLCategorizer`: Dynamically tailors action tiers and interventions based on model prediction probabilities and feature importances (e.g., triggering WhatsApp verification for bracketing vs. prepaid incentives for COD pincode risks).
+   - `RuleBasedCategorizer`: Static rule threshold baseline.
+3. **Feature Stores**:
+   - `DatabaseFeatureStore`: Enriches features via Exasol queries.
+   - `InMemoryFeatureStore`: Thread-safe in-memory store enabling offline/standalone execution without a database.
+
+#### Configuration
+
+| Variable | Values | Description |
+| --- | --- | --- |
+| `SCORER_BACKEND` | `auto` (default), `ml`, `db` | Selects database UDF or ML scoring pipeline. In `auto` mode, falls back to `ml` if Exasol is unreachable. |
+| `ML_MODEL` | `logistic` (default), `tree`, `remote` | Chooses the machine learning model architecture. |
+| `ML_REMOTE_URL` | e.g. `http://model-server:8000/predict` | Endpoint for remote ML model serving. |
 
 ### Web UI
 
