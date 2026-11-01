@@ -202,7 +202,7 @@ internal/checkout  scoring query and tier logic
 internal/     config, Exasol connection, seeding
 sql/          schema and UDF
 scripts/      CSV generator
-docs/         pitch deck (Typst source + PDF)
+docs/         pitch deck (Typst source + PDF) and demo video
 ```
 
 `make test` runs the unit tests; they cover cart bracketing and tier boundaries, not the
@@ -212,5 +212,5 @@ database.
 
 - Pitch deck: [`docs/pitch.pdf`](docs/pitch.pdf) (source: `docs/pitch.typ`, rebuild with
   `typst compile docs/pitch.typ docs/pitch.pdf`).
-- Demo video: a ≤3-minute walkthrough of the setup and a live score.
+- Demo video: [`docs/demo.mov`](docs/demo.mov) — a ≤3-minute walkthrough of the setup and a live score.
 - Licence: [MIT](LICENSE).
